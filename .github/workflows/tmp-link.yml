@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v2
       
       - name: Aria2 Install
-        run: sudo apt install -y aria2 
+        run: sudo apt install -y aria2 rar python3
         
       - name: Downloading
         id: downloading
@@ -31,8 +31,35 @@ jobs:
           echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
           aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
           
+      - name: Process Downloaded Files
+        run: |
+          # 假设您有一个 Python 脚本来处理下载的文件
+          python3 ./deal_download_files.py
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
+        if: env.path != '' && !cancelled() && !failure()
+        with:
+          name: downloaded-files
+          path: ${{ github.event.inputs.Folder }}
+        
+      - name: Create Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: ${{ github.run_id }}
+          prerelease: false
+          title: "Release ${{ github.run_id }}"
+          files: |
+            ${{ github.event.inputs.Folder }}/*
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v1.2.3
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
         if: env.path != '' && !cancelled() && !failure()
         with:
           name: downloaded-files
