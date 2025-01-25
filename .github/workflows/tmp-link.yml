@@ -28,12 +28,12 @@ jobs:
           filename=${url##*##}
           downloadurl=${url%##*}
           mkdir -p ${{ github.event.inputs.Folder }}
-          echo "::set-output name=path::${{ github.event.inputs.Folder }}/$filename"
-          aria2c --conf $GITHUB_WORKSPACE/aria2.conf --seed-time=0 -d ${{ github.event.inputs.Folder }} -c $downloadurl -o $filename
+          echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
+          aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
           
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3  # 更新版本到 v3
-        if: steps.downloading.outputs.path != '' && !cancelled() && !failure()
+        uses: actions/upload-artifact@v3
+        if: env.path != '' && !cancelled() && !failure()
         with:
           name: downloaded-files
           path: ${{ github.event.inputs.Folder }}
