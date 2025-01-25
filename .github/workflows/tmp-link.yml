@@ -1,4 +1,4 @@
-name: Aria2下载直链加密转存tmp.link
+name: Aria2本地下载
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -10,41 +10,33 @@ on:
       Folder:
         description: '保存目录'
         required: true
-        default: 'encrypt_folder'
+        default: 'downloads'
 
 jobs:
-  Aria2-Aliyun:
+  Aria2-Download:
     runs-on: ubuntu-latest
-    services:
-      aliyun:
-        image: ykxvk8yl5l/tmp-link-webdav
-        env:
-          TMP_LINK_TOKEN: '${{ secrets.TMP_TOKEN }}'
-          PORT: 8080
-      alist:
-        image: ykxvk8yl5l/alist-encrypt:dev
-        env:
-          DAV_PASSWORD: '123456'
-          DAV_ENCNAME: true
-          DAV_ENCPATH: '/*'
     steps:
       - uses: actions/checkout@v2
+      
       - name: Aria2 Install
         run: sudo apt install -y aria2 
+        
       - name: Downloading
         id: downloading
         run: |
           url="${{ github.event.inputs.Url}}"
           filename=${url##*##}
           downloadurl=${url%##*}
-          echo "::set-output name=path::downloads/$filename"
-          aria2c --conf $GITHUB_WORKSPACE/aria2.conf --seed-time=0 -d downloads -c $downloadurl -o $filename
-          
-      - name: upload
-        uses: thinkdolabs/curl@v1
+          mkdir -p ${{ github.event.inputs.Folder }}
+          echo "::set-output name=path::${{ github.event.inputs.Folder }}/$filename"
+          aria2c --conf $GITHUB_WORKSPACE/aria2.conf --seed-time=0 -d ${{ github.event.inputs.Folder }} -c $downloadurl -o $filename
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
         if: steps.downloading.outputs.path != '' && !cancelled() && !failure()
         with:
-          args: --upload-file ${{ steps.downloading.outputs.path }} http://alist:5344/${{ steps.downloading.outputs.filename }} 
+          name: downloaded-files
+          path: ${{ github.event.inputs.Folder }}
         
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v1.2.3
