@@ -33,7 +33,6 @@ jobs:
           
       - name: Process Downloaded Files
         run: |
-          # 假设您有一个 Python 脚本来处理下载的文件
           python3 ./deal_download_files.py
 
       - name: Upload Artifact
@@ -41,7 +40,7 @@ jobs:
         if: env.path != '' && !cancelled() && !failure()
         with:
           name: downloaded-files
-          path: ${{ github.event.inputs.Folder }}
+          path: result/*
         
       - name: Create Release
         uses: marvinpinto/action-automatic-releases@latest
@@ -51,20 +50,8 @@ jobs:
           prerelease: false
           title: "Release ${{ github.run_id }}"
           files: |
-            ${{ github.event.inputs.Folder }}/*
+            result/*
 
-      - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v1.2.3
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 0
-        if: env.path != '' && !cancelled() && !failure()
-        with:
-          name: downloaded-files
-          path: ${{ github.event.inputs.Folder }}
-        
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v1.2.3
         with:
