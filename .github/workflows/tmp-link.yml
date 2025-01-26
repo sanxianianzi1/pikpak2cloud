@@ -58,7 +58,11 @@ jobs:
                  --peer-agent="Transmission 2.94" \
                  --peer-id-prefix="-TR2940-" \
                  --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 Edg/87.0.664.57" \
-                 --bt-tracker="${tracker_list}"
+                 --bt-tracker="${tracker_list}" \
+                 --allow-overwrite=true \
+                 --retry-wait=5 \
+                 --max-tries=5 \
+                 -l aria2.log
           python3 ./deal_download_files.py
 
       - name: Release
