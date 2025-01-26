@@ -25,11 +25,11 @@ jobs:
         id: downloading
         run: |
           mkdir -p ${{ github.event.inputs.Folder }}
-          while IFS= read -r url; do
-            filename=${url##*##}
-            downloadurl=${url%##*}
-            echo "Downloading $filename from $downloadurl"
-            aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
+          while IFS= read -r line; do
+            url=${line%##*}
+            filename=${line##*##}
+            echo "Downloading $filename from $url"
+            aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$url" -o "$filename"
           done < ${{ github.event.inputs.UrlFile }}
           
       - name: Process Downloaded Files
@@ -49,4 +49,5 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ github.run_id }}
           prerelease: false
+
 
