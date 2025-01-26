@@ -1,48 +1,67 @@
-name: Aria2本地下载
+name: Main
+
 on:
-  repository_dispatch:
+  push:
+    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      Url:
-        description: '下载URL'
-        required: true
-        default: 'https://网址##名称'
-      Folder:
-        description: '保存目录'
-        required: true
-        default: 'downloads'
 
 jobs:
-  Aria2-Download:
+  build:
     runs-on: ubuntu-latest
     steps:
+      # 检出你的仓库
       - uses: actions/checkout@v2
       
-      - name: Aria2 Install
-        run: sudo apt install -y aria2 rar python3
-        
-      - name: Downloading
-        id: downloading
+      - name: Install Dependencies
         run: |
-          url="${{ github.event.inputs.Url}}"
-          filename=${url##*##}
-          downloadurl=${url%##*}
-          mkdir -p ${{ github.event.inputs.Folder }}
-          echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
-          aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
-          
-      - name: Process Downloaded Files
+          sudo apt-get update
+          sudo apt-get install -y aria2 rar python3
+          wget https://github.com/P3TERX/aria2.conf/raw/master/dht.dat
+          wget https://github.com/P3TERX/aria2.conf/raw/master/dht6.dat
+          wget https://github.com/ngosang/trackerslist/raw/master/trackers_all.txt
+
+      - name: Download Files
         run: |
+          tracker_list=$(cat trackers_all.txt | sed ':label;N;s/\n\n/,/;b label')
+          aria2c --dir=${GITHUB_WORKSPACE}/downloads \
+                 --continue=true \
+                 --input-file=url.list \
+                 --listen-port=51413 \
+                 --dht-listen-port=51413 \
+                 --enable-dht=true \
+                 --enable-dht6=false \
+                 --dht-file-path=dht.dat \
+                 --dht-file-path6=dht6.dat \
+                 --dht-entry-point=dht.transmissionbt.com:6881 \
+                 --dht-entry-point6=dht.transmissionbt.com:6881 \
+                 --bt-enable-lpd=true \
+                 --enable-peer-exchange=true \
+                 --bt-max-peers=128 \
+                 --bt-request-peer-speed-limit=10M \
+                 --max-overall-upload-limit=2M \
+                 --max-upload-limit=0 \
+                 --seed-ratio=1.0 \
+                 --seed-time=0 \
+                 --bt-hash-check-seed=true \
+                 --bt-seed-unverified=false \
+                 --bt-tracker-connect-timeout=10 \
+                 --bt-tracker-timeout=10 \
+                 --bt-prioritize-piece=head=32M,tail=32M \
+                 --rpc-save-upload-metadata=true \
+                 --follow-torrent=true \
+                 --pause-metadata=false \
+                 --bt-save-metadata=true \
+                 --bt-load-saved-metadata=true \
+                 --bt-remove-unselected-file=true \
+                 --bt-force-encryption=true \
+                 --bt-detach-seed-only=true \
+                 --peer-agent="Transmission 2.94" \
+                 --peer-id-prefix="-TR2940-" \
+                 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 Edg/87.0.664.57" \
+                 --bt-tracker="${tracker_list}"
           python3 ./deal_download_files.py
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v3
-        if: env.path != '' && !cancelled() && !failure()
-        with:
-          name: downloaded-files
-          path: result/*
-        
-      - name: Create Release
+      - name: Release
         uses: marvinpinto/action-automatic-releases@latest
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
@@ -51,11 +70,3 @@ jobs:
           title: "Release ${{ github.run_id }}"
           files: |
             result/*
-
-      - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v1.2.3
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 0
