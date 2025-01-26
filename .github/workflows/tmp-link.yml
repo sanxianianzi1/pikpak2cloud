@@ -49,3 +49,4 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ github.run_id }}
           prerelease: false
+
