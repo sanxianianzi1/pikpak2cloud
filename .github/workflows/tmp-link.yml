@@ -3,10 +3,10 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      Url:
-        description: '下载URL'
+      UrlFile:
+        description: '下载URL文件路径'
         required: true
-        default: 'https://网址##名称'
+        default: 'urls.txt'
       Folder:
         description: '保存目录'
         required: true
@@ -24,12 +24,13 @@ jobs:
       - name: Downloading
         id: downloading
         run: |
-          url="${{ github.event.inputs.Url}}"
-          filename=${url##*##}
-          downloadurl=${url%##*}
           mkdir -p ${{ github.event.inputs.Folder }}
-          echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
-          aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
+          while IFS= read -r url; do
+            filename=${url##*##}
+            downloadurl=${url%##*}
+            echo "Downloading $filename from $downloadurl"
+            aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
+          done < ${{ github.event.inputs.UrlFile }}
           
       - name: Process Downloaded Files
         run: |
@@ -48,14 +49,3 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ github.run_id }}
           prerelease: false
-          title: "Release ${{ github.run_id }}"
-          files: |
-            result/*
-
-      - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v1.2.3
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 0
