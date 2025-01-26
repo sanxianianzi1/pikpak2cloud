@@ -21,6 +21,10 @@ jobs:
         id: downloading
         run: |
           while IFS= read -r url; do
+            # 跳过空行
+            if [[ -z "$url" ]]; then
+              continue
+            fi
             filename=${url##*##}
             downloadurl=${url%##*}
             mkdir -p ${{ github.event.inputs.Folder }}
@@ -56,3 +60,4 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 0
+
