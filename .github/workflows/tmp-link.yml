@@ -1,41 +1,47 @@
-name: Aria2 Batch Download
-
+name: Aria2本地下载
 on:
+  repository_dispatch:
   workflow_dispatch:
+    inputs:
+      Url:
+        description: '下载URL'
+        required: true
+        default: 'https://网址##名称'
+      Folder:
+        description: '保存目录'
+        required: true
+        default: 'downloads'
 
 jobs:
   Aria2-Download:
     runs-on: ubuntu-latest
     steps:
-      # 检出代码仓库
       - uses: actions/checkout@v2
       
-      # 安装必要的依赖
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y aria2 python3
-
-      # 从 url.list 下载文件
-      - name: Download from url.list
+      - name: Aria2 Install
+        run: sudo apt install -y aria2 rar python3
+        
+      - name: Downloading
+        id: downloading
         run: |
-          mkdir -p downloads
-          while IFS= read -r line || [ -n "$line" ]; do
-            echo "Downloading $line"
-            aria2c --seed-time=0 -d downloads -c "$line"
-          done < url.list
-
-      # 处理下载的文件
+          url="${{ github.event.inputs.Url}}"
+          filename=${url##*##}
+          downloadurl=${url%##*}
+          mkdir -p ${{ github.event.inputs.Folder }}
+          echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
+          aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
+          
       - name: Process Downloaded Files
         run: |
           python3 ./deal_download_files.py
 
-      # 上传下载的文件作为工件
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
+        if: env.path != '' && !cancelled() && !failure()
         with:
           name: downloaded-files
-          path: downloads/*
-
-      # 创建发布
+          path: result/*
+        
       - name: Create Release
         uses: marvinpinto/action-automatic-releases@latest
         with:
@@ -44,13 +50,12 @@ jobs:
           prerelease: false
           title: "Release ${{ github.run_id }}"
           files: |
-            downloads/*
+            result/*
 
-      # 删除工作流运行记录
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v1.2.3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 0
