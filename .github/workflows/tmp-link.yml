@@ -3,10 +3,10 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      UrlFile:
-        description: '下载URL文件路径'
+      Url:
+        description: '下载URL'
         required: true
-        default: 'urls.txt'
+        default: 'https://网址##名称'
       Folder:
         description: '保存目录'
         required: true
@@ -24,17 +24,12 @@ jobs:
       - name: Downloading
         id: downloading
         run: |
+          url="${{ github.event.inputs.Url}}"
+          filename=${url##*##}
+          downloadurl=${url%##*}
           mkdir -p ${{ github.event.inputs.Folder }}
-          while IFS= read -r line; do
-            url=${line%##*}
-            filename=${line##*##}
-            
-            # Replace spaces with underscores and remove non-ASCII characters
-            sanitized_filename=$(echo "$filename" | sed 's/ /_/g' | sed 's/[^a-zA-Z0-9._-]/./g')
-            
-            echo "Downloading $sanitized_filename from $url"
-            aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$url" -o "$sanitized_filename"
-          done < ${{ github.event.inputs.UrlFile }}
+          echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
+          aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
           
       - name: Process Downloaded Files
         run: |
@@ -53,6 +48,18 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ github.run_id }}
           prerelease: false
+          title: "Release ${{ github.run_id }}"
+          files: |
+            result/*
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v1.2.3
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
+
 
 
 
