@@ -24,12 +24,15 @@ jobs:
       - name: Downloading
         id: downloading
         run: |
-          url="${{ github.event.inputs.Url}}"
-          filename=${url##*##}
-          downloadurl=${url%##*}
-          mkdir -p ${{ github.event.inputs.Folder }}
-          echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
-          aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
+          urls="${{ github.event.inputs.Url }}"
+          IFS=',' read -r -a url_array <<< "$urls"
+          for url in "${url_array[@]}"; do
+            filename=${url##*##}
+            downloadurl=${url%##*}
+            mkdir -p ${{ github.event.inputs.Folder }}
+            echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
+            aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
+          done
           
       - name: Process Downloaded Files
         run: |
@@ -59,7 +62,6 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 0
-
 
 
 
