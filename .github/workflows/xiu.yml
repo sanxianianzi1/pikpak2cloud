@@ -37,7 +37,7 @@ jobs:
           python3 ./deal_download_files.py
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # 从v3更新到v4
         if: env.path != '' && !cancelled() && !failure()
         with:
           name: downloaded-files
@@ -60,4 +60,3 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 0
-
