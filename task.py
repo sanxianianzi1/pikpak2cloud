@@ -1,70 +1,55 @@
-import json
-import sys
-import argparse
-import os
-
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    create_engine,
-)
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from sqlalchemy.sql import func
-
-parser = argparse.ArgumentParser(description="操作数据库")
-parser.add_argument("--opt", help="操作", default="query")
-parser.add_argument("--con", help="数据库链接地址", default="")
-parser.add_argument("--name", help="文件名称", default="")
-
-args = parser.parse_args()
-
-engine = create_engine(
-    args.con,
-    echo=False,
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-db = SessionLocal()
-Base = declarative_base()
-
-class Task(Base):
-    __tablename__ = "task"
-
-    id = Column(Integer, unique=True, primary_key=True)
-    status = Column(String, index=True)
-    sort = Column(Integer)
-    date_created = Column(DateTime(timezone=True), server_default=func.now())
-    url = Column(String)
-
-def find_one_and_update():
-    with Session(engine) as session:
-        task = db.query(Task).filter(Task.status == "draft").first()
-        if task is None:
-            print("没有找到待处理的任务")
-            sys.exit(1)
-        task.status = "published"
-        db.commit()
-        db.refresh(task)
-        return task
-
-def delete_task():
-    with Session(engine) as session:
-        keyword = "##" + args.name
-        task = db.query(Task).filter(Task.url.like(f"%{keyword}")).first()
-        if task is not None:
-            db.delete(task)
-            db.commit()
-
-if __name__ == "__main__":
-    if args.opt == "query":
-        task = find_one_and_update()
-        if task is not None:
-            print(task.url)
-        sys.exit(0)
-    if args.opt == "delete":
-        delete_task()
+      - name: Process and Download
+        id: downloading
+        run: |
+          mkdir -p downloads
+          # 从数据库获取链接并保存到文件
+          if ! python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > input_links.txt 2>error.log; then
+            echo "数据库查询失败或没有待处理任务"
+            cat error.log
+            exit 1
+          fi
+          
+          if [ ! -s input_links.txt ]; then
+            echo "没有找到链接"
+            exit 1
+          fi
+          
+          # 使用process_links.py处理链接
+          if ! python scripts/process_links.py input_links.txt; then
+            echo "链接处理失败"
+            exit 1
+          fi
+          
+          if [ ! -s urls.txt ]; then
+            echo "没有有效的链接"
+            exit 1
+          fi
+          
+          # 下载文件
+          success=false
+          while IFS= read -r url; do
+            if [[ -z "$url" ]]; then
+              continue
+            fi
+            if aria2c --seed-time=0 -d downloads -c "$url"; then
+              success=true
+              break
+            fi
+          done < urls.txt
+          
+          if [ "$success" = false ]; then
+            echo "所有下载都失败了"
+            exit 1
+          fi
+          
+          # 检查是否有文件被下载
+          if [ ! "$(ls -A downloads)" ]; then
+            echo "下载目录为空"
+            exit 1
+          fi
+          
+          filename=$(ls downloads | head -n1)
+          echo "filename=$filename" >> $GITHUB_OUTPUT
+          echo "path=downloads/$filename" >> $GITHUB_OUTPUT
+          size=$(ls -l downloads/$filename | awk '{print $5}' )
+          echo "size=$size" >> $GITHUB_OUTPUT
