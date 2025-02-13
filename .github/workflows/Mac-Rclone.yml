@@ -162,10 +162,9 @@ jobs:
           wget -O /dev/null -o /dev/null "${{secrets.BARK_KEY}}?title=发布结果&icon=https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png&group=Actions&body=${{ steps.downloading.outputs.filename }}发布成功&isArchive=0"
          
       - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v1.2.3
+        uses: actions/delete-workflow-runs@v1
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
-          keep_minimum_runs: 0
           keep_minimum_runs: 0
