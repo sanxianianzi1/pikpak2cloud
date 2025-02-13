@@ -55,26 +55,6 @@ jobs:
       # 创建必要的脚本文件
       - name: Create Scripts
         run: |
-          # 创建process_links.py
-          cat > process_links.py << 'EOL'
-          import re
-          def process_links(input_links):
-              cleaned_links = re.sub(r'https://pikpak\d\.sanxianianzi\d*\.ggff\.net/', '', input_links)
-              links = [link.strip() for link in cleaned_links.split('https://vod-jo-') if link.strip()]
-              formatted_links = [f'https://vod-jo-{link}' for link in links]
-              return formatted_links
-          
-          def main():
-              with open('raw_links.txt', 'r', encoding='utf-8') as file:
-                  input_links = file.read()
-              formatted_links = process_links(input_links)
-              with open('urls.txt', 'w', encoding='utf-8') as file:
-                  file.write('\n'.join(formatted_links))
-          
-          if __name__ == "__main__":
-              main()
-          EOL
-          
           # 创建deal_download_files.py
           cat > deal_download_files.py << 'EOL'
           import os
@@ -101,15 +81,15 @@ jobs:
         id: downloading
         run: |
           mkdir -p downloads
-          # 从数据库获取链接
-          python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > raw_links.txt
-          if [ ! -s raw_links.txt ]; then
+          # 从数据库获取链接并保存到文件
+          python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > input_links.txt
+          if [ ! -s input_links.txt ]; then
             echo "No links found in database"
             exit 1
           fi
           
-          # 处理链接
-          python process_links.py
+          # 使用process_links.py处理链接
+          python process_links.py input_links.txt
           if [ ! -s urls.txt ]; then
             echo "No valid links after processing"
             exit 1
@@ -187,4 +167,5 @@ jobs:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
+          keep_minimum_runs: 0
           keep_minimum_runs: 0
