@@ -1,4 +1,5 @@
 import re
+import sys
 
 def process_links(input_links):
     # 删除指定的前缀
@@ -13,18 +14,31 @@ def process_links(input_links):
     return formatted_links
 
 def main():
-    # 提示用户输入链接
-    input_links = input("请输入链接：")
+    # 检查命令行参数
+    if len(sys.argv) != 2:
+        print("Usage: python process_links.py <input_file>")
+        sys.exit(1)
 
-    # 处理链接
-    formatted_links = process_links(input_links)
+    input_file = sys.argv[1]
+    
+    try:
+        # 读取输入文件
+        with open(input_file, 'r', encoding='utf-8') as file:
+            input_links = file.read()
 
-    # 输出到文件
-    output_path = r'C:\Users\xiao\Desktop\urls.txt'
-    with open(output_path, 'w', encoding='utf-8') as file:
-        file.write('\n'.join(formatted_links))
+        # 处理链接
+        formatted_links = process_links(input_links)
 
-    print(f"处理后的链接已写入 {output_path}")
+        # 写入结果到urls.txt
+        with open('urls.txt', 'w', encoding='utf-8') as file:
+            file.write('\n'.join(formatted_links))
+
+    except FileNotFoundError:
+        print(f"Error: Input file '{input_file}' not found")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error processing links: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
