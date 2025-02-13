@@ -52,16 +52,70 @@ jobs:
           python -m pip install --upgrade pip wheel
           pip install lk21==1.5.61 pymongo pymongo[srv] pymongo[tls] certifi SQLAlchemy psycopg2-binary
           
-      - name: Downloading
+      # 创建必要的脚本文件
+      - name: Create Scripts
+        run: |
+          # 创建process_links.py
+          cat > process_links.py << 'EOL'
+          import re
+          def process_links(input_links):
+              cleaned_links = re.sub(r'https://pikpak\d\.sanxianianzi\d*\.ggff\.net/', '', input_links)
+              links = [link.strip() for link in cleaned_links.split('https://vod-jo-') if link.strip()]
+              formatted_links = [f'https://vod-jo-{link}' for link in links]
+              return formatted_links
+          
+          def main():
+              with open('raw_links.txt', 'r', encoding='utf-8') as file:
+                  input_links = file.read()
+              formatted_links = process_links(input_links)
+              with open('urls.txt', 'w', encoding='utf-8') as file:
+                  file.write('\n'.join(formatted_links))
+          
+          if __name__ == "__main__":
+              main()
+          EOL
+          
+          # 创建deal_download_files.py
+          cat > deal_download_files.py << 'EOL'
+          import os
+          import shutil
+          
+          def process_files():
+              downloads_dir = 'downloads'
+              result_dir = 'result'
+              
+              if not os.path.exists(result_dir):
+                  os.makedirs(result_dir)
+              
+              for filename in os.listdir(downloads_dir):
+                  src_path = os.path.join(downloads_dir, filename)
+                  dst_path = os.path.join(result_dir, filename)
+                  shutil.move(src_path, dst_path)
+          
+          if __name__ == "__main__":
+              process_files()
+          EOL
+
+      # 处理链接并下载
+      - name: Process and Download
         id: downloading
         run: |
-          mkdir downloads
-          python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}"
+          mkdir -p downloads
+          # 从数据库获取链接
+          python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > raw_links.txt
+          # 处理链接
+          python process_links.py
+          # 下载文件
+          while IFS= read -r url; do
+            if [[ -z "$url" ]]; then
+              continue
+            fi
+            aria2c --seed-time=0 -d downloads -c "$url"
+          done < urls.txt
+          
           filename=$(ls downloads | head -n1)
-          folder=$(sh folder.sh $filename)
-          echo "::set-output name=path::downloads/$filename"
           echo "::set-output name=filename::$filename"
-          echo "::set-output name=folder::$folder"
+          echo "::set-output name=path::downloads/$filename"
           size=$(ls -l downloads/$filename | awk '{print $5}' )
           echo $size
           echo "::set-output name=size::$size"
@@ -69,13 +123,7 @@ jobs:
       - name: Process Downloaded Files
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
-          python ./deal_download_files.py
-
-      - name: Prepare files for release
-        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
-        run: |
-          mkdir -p result
-          mv result/* result/ 2>/dev/null || true
+          python deal_download_files.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
