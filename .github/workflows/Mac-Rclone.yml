@@ -103,8 +103,18 @@ jobs:
           mkdir -p downloads
           # 从数据库获取链接
           python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > raw_links.txt
+          if [ ! -s raw_links.txt ]; then
+            echo "No links found in database"
+            exit 1
+          fi
+          
           # 处理链接
           python process_links.py
+          if [ ! -s urls.txt ]; then
+            echo "No valid links after processing"
+            exit 1
+          fi
+          
           # 下载文件
           while IFS= read -r url; do
             if [[ -z "$url" ]]; then
@@ -113,12 +123,17 @@ jobs:
             aria2c --seed-time=0 -d downloads -c "$url"
           done < urls.txt
           
+          # 检查是否有文件被下载
+          if [ ! "$(ls -A downloads)" ]; then
+            echo "No files were downloaded"
+            exit 1
+          fi
+          
           filename=$(ls downloads | head -n1)
-          echo "::set-output name=filename::$filename"
-          echo "::set-output name=path::downloads/$filename"
+          echo "filename=$filename" >> $GITHUB_OUTPUT
+          echo "path=downloads/$filename" >> $GITHUB_OUTPUT
           size=$(ls -l downloads/$filename | awk '{print $5}' )
-          echo $size
-          echo "::set-output name=size::$size"
+          echo "size=$size" >> $GITHUB_OUTPUT
 
       - name: Process Downloaded Files
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
@@ -148,7 +163,7 @@ jobs:
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
           python task.py --opt="delete" --con="${{ secrets.DB_CONNECT }}" --name="${{ steps.downloading.outputs.filename }}"
-          echo "::set-output name=status::ok"
+          echo "status=ok" >> $GITHUB_OUTPUT
 
       - name: Download another right now
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
@@ -158,7 +173,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/sanxianianzi1/pikpak2cloud/actions/workflows/Mac-Rclone.yml/dispatches \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/Mac-Download-Release.yml/dispatches \
             -d '{"ref":"main","inputs":{}}'
 
       - name: 通知结果
