@@ -14,30 +14,50 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       
-      - name: Aria2 Install
-        run: sudo apt install -y aria2 rar python3
-        
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      
+      - name: Install Dependencies
+        run: |
+          sudo apt install -y aria2 rar python3
+          python -m pip install --upgrade pip wheel
+          pip install SQLAlchemy psycopg2-binary
+          
       - name: Downloading
         id: downloading
         run: |
+          # 从数据库获取链接并保存到文件
+          python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > input_links.txt
+          if [ ! -s input_links.txt ]; then
+            echo "No links found in database"
+            exit 1
+          fi
+          
+          # 处理链接
+          python process_links.py input_links.txt
+          if [ ! -s urls.txt ]; then
+            echo "No valid links after processing"
+            exit 1
+          fi
+          
+          # 下载文件
+          mkdir -p ${{ github.event.inputs.Folder }}
           while IFS= read -r url; do
-            # 跳过空行
-            if [[ -z "$url" ]]; then
-              continue
-            fi
+            if [[ -z "$url" ]]; then continue; fi
             filename=${url##*##}
             downloadurl=${url%##*}
-            mkdir -p ${{ github.event.inputs.Folder }}
             echo "path=${{ github.event.inputs.Folder }}/$filename" >> $GITHUB_ENV
             aria2c --seed-time=0 -d ${{ github.event.inputs.Folder }} -c "$downloadurl" -o "$filename"
           done < urls.txt
           
       - name: Process Downloaded Files
         run: |
-          python3 ./deal_download_files.py
+          python ./deal_download_files.py
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4  # 从v3更新到v4
+        uses: actions/upload-artifact@v4
         if: env.path != '' && !cancelled() && !failure()
         with:
           name: downloaded-files
@@ -45,6 +65,7 @@ jobs:
         
       - name: Create Release
         uses: marvinpinto/action-automatic-releases@latest
+        if: env.path != '' && !cancelled() && !failure()
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ github.run_id }}
@@ -53,8 +74,15 @@ jobs:
           files: |
             result/*
 
+      - name: Save Data
+        id: database
+        if: env.path != '' && !cancelled() && !failure()
+        run: |
+          filename=$(basename "${{ env.path }}")
+          python task.py --opt="delete" --con="${{ secrets.DB_CONNECT }}" --name="$filename"
+
       - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v1.2.3
+        uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
