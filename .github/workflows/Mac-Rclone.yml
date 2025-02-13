@@ -1,4 +1,4 @@
-name: Copy To Rclone on Mac
+name: Mac Download And Release
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -18,10 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          persist-credentials: false # otherwise, the token used is the GITHUB_TOKEN, instead of your personal token
+          persist-credentials: false
           fetch-depth: 0 
       
-      - name: 增加可用空间 (删除dotnet, android、haskell、CodeQL)
+      - name: 增加可用空间
         shell: bash
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -32,13 +32,8 @@ jobs:
           echo "硬盘详情："
           df -h
 
-      - name: Rclone Install
-        run: |
-            curl https://rclone.org/install.sh | sudo bash
-
       - name: Check depends
         run: |
-            rclone -V
             aria2c -v
             node -v
             python -V
@@ -48,48 +43,57 @@ jobs:
         with:
           python-version: 3.9
            
-      - name: Config Rclone
-        run: |
-          printf "$RCLONE_ENV_FILE" >> ~/.config/rclone/rclone.conf
-        shell: bash
-        env:
-          RCLONE_ENV_FILE : ${{secrets.RCLONE_CONF}}
       - name: install postgresql
         run: |
           brew install postgresql
+          
       - name: install prerequisites
         run: |
           python -m pip install --upgrade pip wheel
           pip install lk21==1.5.61 pymongo pymongo[srv] pymongo[tls] certifi SQLAlchemy psycopg2-binary
           
- 
       - name: Downloading
         id: downloading
         run: |
           mkdir downloads
           python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}"
           filename=$(ls downloads | head -n1)
-          folder=$(sh folder.sh $filename)
-          echo "::set-output name=path::downloads/$filename"
           echo "::set-output name=filename::$filename"
-          echo "::set-output name=folder::$folder"
-          size=$(ls -l downloads/$filename | awk '{print $5}' )
-          echo $size
-          echo "::set-output name=size::$size"
- 
+          echo "::set-output name=path::downloads/$filename"
 
-      - name: rclone copy
+      # 新增：将下载的文件移动到 result 目录
+      - name: Prepare files for release
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
-          rclone copy ${{ steps.downloading.outputs.path }} files:/${{ steps.downloading.outputs.folder }} 
+          mkdir -p result
+          mv ${{ steps.downloading.outputs.path }} result/
+
+      # 新增：上传文件作为 artifact
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
+        with:
+          name: downloaded-files
+          path: result/*
+
+      # 新增：创建 Release
+      - name: Create Release
+        uses: marvinpinto/action-automatic-releases@latest
+        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: ${{ github.run_id }}
+          prerelease: false
+          title: "Release ${{ github.run_id }}"
+          files: |
+            result/*
       
       - name: Save Data
-        id:  database
+        id: database
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
           python task.py --opt="delete" --con="${{ secrets.DB_CONNECT }}" --name="${{ steps.downloading.outputs.filename }}"
           echo "::set-output name=status::ok"
-
 
       - name: Download another right now
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
@@ -97,15 +101,15 @@ jobs:
             curl -L \
             -X POST \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.TOKEN }}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/sanxianianzi1/pikpak2cloud/actions/workflows/Mac-Rclone.yml/dispatches \
-            -d '{"ref":"main","inputs":{}}' 
+            -d '{"ref":"main","inputs":{}}'
 
-      - name: 通知上传结果
+      - name: 通知结果
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
-          wget -O /dev/null -o /dev/null "${{secrets.BARK_KEY}}?title=上传结果&icon=https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png&group=Actions&body=${{ steps.downloading.outputs.filename }}上传成功&isArchive=0"
+          wget -O /dev/null -o /dev/null "${{secrets.BARK_KEY}}?title=发布结果&icon=https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png&group=Actions&body=${{ steps.downloading.outputs.filename }}发布成功&isArchive=0"
          
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v1.2.3
