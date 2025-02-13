@@ -58,17 +58,25 @@ jobs:
           mkdir downloads
           python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}"
           filename=$(ls downloads | head -n1)
-          echo "::set-output name=filename::$filename"
+          folder=$(sh folder.sh $filename)
           echo "::set-output name=path::downloads/$filename"
+          echo "::set-output name=filename::$filename"
+          echo "::set-output name=folder::$folder"
+          size=$(ls -l downloads/$filename | awk '{print $5}' )
+          echo $size
+          echo "::set-output name=size::$size"
 
-      # 新增：将下载的文件移动到 result 目录
+      - name: Process Downloaded Files
+        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
+        run: |
+          python ./deal_download_files.py
+
       - name: Prepare files for release
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
           mkdir -p result
-          mv ${{ steps.downloading.outputs.path }} result/
+          mv result/* result/ 2>/dev/null || true
 
-      # 新增：上传文件作为 artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
@@ -76,7 +84,6 @@ jobs:
           name: downloaded-files
           path: result/*
 
-      # 新增：创建 Release
       - name: Create Release
         uses: marvinpinto/action-automatic-releases@latest
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
