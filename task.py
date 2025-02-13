@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
 import argparse
@@ -17,7 +17,6 @@ parser.add_argument("--name", help="文件名称", default="")
 
 args = parser.parse_args()
 
-# 数据库模型
 Base = declarative_base()
 
 class Task(Base):
@@ -28,70 +27,55 @@ class Task(Base):
     date_created = Column(DateTime(timezone=True), server_default=func.now())
     url = Column(String)
 
-def create_db_session():
-    """创建数据库会话"""
-    try:
-        engine = create_engine(args.con, echo=False, pool_pre_ping=True)
-        Session = sessionmaker(bind=engine)
-        session = Session()
-        # 测试连接
-        session.execute(text("SELECT 1"))
-        return session
-    except Exception as e:
-        logger.error(f"数据库连接失败: {str(e)}")
-        return None
-
 def find_one_and_update():
     """查找并更新一个任务"""
-    session = create_db_session()
-    if not session:
-        return False
-    
     try:
+        engine = create_engine(args.con, echo=False)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
         # 查询任务
         task = session.query(Task).filter(Task.status == "draft").order_by(Task.sort.desc()).first()
-        if task:
+        if task and task.url:
             task.status = "published"
             session.commit()
-            print(task.url)
+            print(task.url)  # 直接打印到标准输出
             logger.info(f"成功更新任务: {task.id}")
             return True
         else:
             logger.warning("没有找到待处理的任务")
-            return False
+            return True  # 返回 True 以避免工作流失败
     except Exception as e:
         logger.error(f"查询或更新失败: {str(e)}")
-        session.rollback()
         return False
     finally:
-        session.close()
+        if 'session' in locals():
+            session.close()
 
 def delete_task():
     """删除指定的任务"""
-    session = create_db_session()
-    if not session:
-        return False
-    
     try:
+        engine = create_engine(args.con, echo=False)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
         keyword = "##" + args.name
         task = session.query(Task).filter(Task.url.like(f"%{keyword}")).first()
         if task:
             session.delete(task)
             session.commit()
             logger.info(f"成功删除任务: {task.id}")
-            return True
         else:
             logger.warning(f"未找到要删除的任务: {keyword}")
-            return False
     except Exception as e:
         logger.error(f"删除任务失败: {str(e)}")
-        session.rollback()
         return False
     finally:
-        session.close()
+        if 'session' in locals():
+            session.close()
+    return True
 
-def main():
-    """主函数"""
+if __name__ == "__main__":
     try:
         if args.opt == "query":
             if not find_one_and_update():
@@ -105,6 +89,3 @@ def main():
     except Exception as e:
         logger.error(f"程序执行出错: {str(e)}")
         sys.exit(1)
-
-if __name__ == "__main__":
-    main()
