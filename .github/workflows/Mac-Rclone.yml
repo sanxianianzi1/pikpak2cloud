@@ -32,12 +32,6 @@ jobs:
           echo "硬盘详情："
           df -h
 
-      - name: Check depends
-        run: |
-            aria2c -v
-            node -v
-            python -V
-            
       - name: Set up Python 3.9
         uses: actions/setup-python@v2
         with:
@@ -51,63 +45,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip wheel
           pip install lk21==1.5.61 pymongo pymongo[srv] pymongo[tls] certifi SQLAlchemy psycopg2-binary
-          
-      # 创建必要的脚本文件
-      - name: Create Scripts
-        run: |
-          # 创建deal_download_files.py
-          cat > deal_download_files.py << 'EOL'
-          import os
-          import shutil
-          
-          def process_files():
-              downloads_dir = 'downloads'
-              result_dir = 'result'
-              
-              if not os.path.exists(result_dir):
-                  os.makedirs(result_dir)
-              
-              for filename in os.listdir(downloads_dir):
-                  src_path = os.path.join(downloads_dir, filename)
-                  dst_path = os.path.join(result_dir, filename)
-                  shutil.move(src_path, dst_path)
-          
-          if __name__ == "__main__":
-              process_files()
-          EOL
 
       # 处理链接并下载
       - name: Process and Download
         id: downloading
         run: |
           mkdir -p downloads
-          # 从数据库获取链接并保存到文件
           python task.py --opt="query" --con="${{ secrets.DB_CONNECT }}" > input_links.txt
-          if [ ! -s input_links.txt ]; then
-            echo "No links found in database"
-            exit 1
-          fi
-          
-          # 使用process_links.py处理链接
-          python process_links.py input_links.txt
-          if [ ! -s urls.txt ]; then
-            echo "No valid links after processing"
-            exit 1
-          fi
-          
-          # 下载文件
+          python scripts/process_links.py input_links.txt
           while IFS= read -r url; do
-            if [[ -z "$url" ]]; then
-              continue
-            fi
+            if [[ -z "$url" ]]; then continue; fi
             aria2c --seed-time=0 -d downloads -c "$url"
           done < urls.txt
-          
-          # 检查是否有文件被下载
-          if [ ! "$(ls -A downloads)" ]; then
-            echo "No files were downloaded"
-            exit 1
-          fi
           
           filename=$(ls downloads | head -n1)
           echo "filename=$filename" >> $GITHUB_OUTPUT
@@ -118,16 +67,9 @@ jobs:
       - name: Process Downloaded Files
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
-          python deal_download_files.py
+          python scripts/deal_download_files.py
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
-        with:
-          name: downloaded-files
-          path: result/*
-
-      - name: Create Release
+      - name: Upload and Release
         uses: marvinpinto/action-automatic-releases@latest
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         with:
@@ -138,27 +80,11 @@ jobs:
           files: |
             result/*
       
-      - name: Save Data
-        id: database
+      - name: Save Data and Trigger Next
         if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
         run: |
           python task.py --opt="delete" --con="${{ secrets.DB_CONNECT }}" --name="${{ steps.downloading.outputs.filename }}"
-          echo "status=ok" >> $GITHUB_OUTPUT
-
-      - name: Download another right now
-        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
-        run: |
-            curl -L \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/Mac-Download-Release.yml/dispatches \
-            -d '{"ref":"main","inputs":{}}'
-
-      - name: 通知结果
-        if: steps.downloading.outputs.filename != '' && !cancelled() && !failure()
-        run: |
+          curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/repos/${{ github.repository }}/actions/workflows/Mac-Download-Release.yml/dispatches -d '{"ref":"main","inputs":{}}'
           wget -O /dev/null -o /dev/null "${{secrets.BARK_KEY}}?title=发布结果&icon=https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png&group=Actions&body=${{ steps.downloading.outputs.filename }}发布成功&isArchive=0"
          
       - name: Delete workflow runs
