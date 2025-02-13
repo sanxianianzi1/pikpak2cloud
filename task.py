@@ -1,18 +1,15 @@
-      - name: Create Scripts
-        run: |
-          # 创建 task.py
-          cat > task.py << 'EOL'
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.sql      - name: Create Scripts
-        run: |
-          # 创建 task.py
-          cat > task.py << 'EOL'
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
 import argparse
+import sys
+import logging
 
+# 设置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 参数解析
 parser = argparse.ArgumentParser(description="操作数据库")
 parser.add_argument("--opt", help="操作", default="query")
 parser.add_argument("--con", help="数据库链接地址", default="")
@@ -20,6 +17,7 @@ parser.add_argument("--name", help="文件名称", default="")
 
 args = parser.parse_args()
 
+# 数据库模型
 Base = declarative_base()
 
 class Task(Base):
@@ -30,150 +28,83 @@ class Task(Base):
     date_created = Column(DateTime(timezone=True), server_default=func.now())
     url = Column(String)
 
+def create_db_session():
+    """创建数据库会话"""
+    try:
+        engine = create_engine(args.con, echo=False, pool_pre_ping=True)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        # 测试连接
+        session.execute(text("SELECT 1"))
+        return session
+    except Exception as e:
+        logger.error(f"数据库连接失败: {str(e)}")
+        return None
+
 def find_one_and_update():
-    engine = create_engine(args.con, echo=False)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+    """查找并更新一个任务"""
+    session = create_db_session()
+    if not session:
+        return False
     
-    task = session.query(Task).filter(Task.status == "draft").first()
-    if task:
-        task.status = "published"
-        session.commit()
-        print(task.url)
-    session.close()
+    try:
+        # 查询任务
+        task = session.query(Task).filter(Task.status == "draft").order_by(Task.sort.desc()).first()
+        if task:
+            task.status = "published"
+            session.commit()
+            print(task.url)
+            logger.info(f"成功更新任务: {task.id}")
+            return True
+        else:
+            logger.warning("没有找到待处理的任务")
+            return False
+    except Exception as e:
+        logger.error(f"查询或更新失败: {str(e)}")
+        session.rollback()
+        return False
+    finally:
+        session.close()
 
 def delete_task():
-    engine = create_engine(args.con, echo=False)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+    """删除指定的任务"""
+    session = create_db_session()
+    if not session:
+        return False
     
-    keyword = "##" + args.name
-    task = session.query(Task).filter(Task.url.like(f"%{keyword}")).first()
-    if task:
-        session.delete(task)
-        session.commit()
-    session.close()
-
-if __name__ == "__main__":
-    if args.opt == "query":
-        find_one_and_update()
-    elif args.opt == "delete":
-        delete_task()
-EOL
-
-          # 创建 process_links.py
-          cat > process_links.py << 'EOL'
-import re
-import sys
-
-def process_links(input_links):
-    # 删除指定的前缀
-    cleaned_links = re.sub(r'https://pikpak\d\.sanxianianzi\d*\.ggff\.net/', '', input_links)
-    # 分割链接并过滤掉空行
-    links = [link.strip() for link in cleaned_links.split('https://vod-jo-') if link.strip()]
-    # 添加前缀并准备输出
-    formatted_links = [f'https://vod-jo-{link}' for link in links]
-    return formatted_links
+    try:
+        keyword = "##" + args.name
+        task = session.query(Task).filter(Task.url.like(f"%{keyword}")).first()
+        if task:
+            session.delete(task)
+            session.commit()
+            logger.info(f"成功删除任务: {task.id}")
+            return True
+        else:
+            logger.warning(f"未找到要删除的任务: {keyword}")
+            return False
+    except Exception as e:
+        logger.error(f"删除任务失败: {str(e)}")
+        session.rollback()
+        return False
+    finally:
+        session.close()
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python process_links.py <input_file>")
-        sys.exit(1)
-
-    input_file = sys.argv[1]
+    """主函数"""
     try:
-        with open(input_file, 'r', encoding='utf-8') as file:
-            input_links = file.read()
-        formatted_links = process_links(input_links)
-        with open('urls.txt', 'w', encoding='utf-8') as file:
-            file.write('\n'.join(formatted_links))
+        if args.opt == "query":
+            if not find_one_and_update():
+                sys.exit(1)
+        elif args.opt == "delete":
+            if not delete_task():
+                sys.exit(1)
+        else:
+            logger.error(f"未知的操作类型: {args.opt}")
+            sys.exit(1)
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"程序执行出错: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
     main()
-EOL import func
-import argparse
-
-parser = argparse.ArgumentParser(description="操作数据库")
-parser.add_argument("--opt", help="操作", default="query")
-parser.add_argument("--con", help="数据库链接地址", default="")
-parser.add_argument("--name", help="文件名称", default="")
-
-args = parser.parse_args()
-
-Base = declarative_base()
-
-class Task(Base):
-    __tablename__ = "task"
-    id = Column(Integer, unique=True, primary_key=True)
-    status = Column(String, index=True)
-    sort = Column(Integer)
-    date_created = Column(DateTime(timezone=True), server_default=func.now())
-    url = Column(String)
-
-def find_one_and_update():
-    engine = create_engine(args.con, echo=False)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    
-    task = session.query(Task).filter(Task.status == "draft").first()
-    if task:
-        task.status = "published"
-        session.commit()
-        print(task.url)
-    session.close()
-
-def delete_task():
-    engine = create_engine(args.con, echo=False)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    
-    keyword = "##" + args.name
-    task = session.query(Task).filter(Task.url.like(f"%{keyword}")).first()
-    if task:
-        session.delete(task)
-        session.commit()
-    session.close()
-
-if __name__ == "__main__":
-    if args.opt == "query":
-        find_one_and_update()
-    elif args.opt == "delete":
-        delete_task()
-EOL
-
-          # 创建 process_links.py
-          cat > process_links.py << 'EOL'
-import re
-import sys
-
-def process_links(input_links):
-    # 删除指定的前缀
-    cleaned_links = re.sub(r'https://pikpak\d\.sanxianianzi\d*\.ggff\.net/', '', input_links)
-    # 分割链接并过滤掉空行
-    links = [link.strip() for link in cleaned_links.split('https://vod-jo-') if link.strip()]
-    # 添加前缀并准备输出
-    formatted_links = [f'https://vod-jo-{link}' for link in links]
-    return formatted_links
-
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python process_links.py <input_file>")
-        sys.exit(1)
-
-    input_file = sys.argv[1]
-    try:
-        with open(input_file, 'r', encoding='utf-8') as file:
-            input_links = file.read()
-        formatted_links = process_links(input_links)
-        with open('urls.txt', 'w', encoding='utf-8') as file:
-            file.write('\n'.join(formatted_links))
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-EOL
